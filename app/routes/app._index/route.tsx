@@ -1,12 +1,48 @@
 // app/routes/check-subscriber.ts
-import type { ActionFunctionArgs } from "@remix-run/node";
+import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
+
+// Handle preflight OPTIONS requests
+export async function loader({ request }: LoaderFunctionArgs) {
+  if (request.method === "OPTIONS") {
+    return new Response(null, {
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type",
+      },
+    });
+  }
+  
+  return new Response(null, { status: 405 });
+}
 
 export async function action({ request }: ActionFunctionArgs) {
+  // Handle preflight requests
+  if (request.method === "OPTIONS") {
+    return new Response(null, {
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type",
+      },
+    });
+  }
+
   try {
     const { email } = await request.json();
 
+    if (!email) {
+      return new Response(JSON.stringify({ error: "Email is required" }), {
+        status: 400,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        },
+      });
+    }
+
     const res = await fetch(
-      `https://${process.env.SHOP}/admin/api/2025-01/customers/search.json?query=email:${email}`,
+      `https://${process.env.SHOP}/admin/api/2025-01/customers/search.json?query=email:${encodeURIComponent(email)}`,
       {
         headers: {
           "X-Shopify-Access-Token": process.env.SHOPIFY_ADMIN_TOKEN!,
@@ -14,6 +50,10 @@ export async function action({ request }: ActionFunctionArgs) {
         },
       }
     );
+
+    if (!res.ok) {
+      throw new Error(`Shopify API error: ${res.status}`);
+    }
 
     const data = await res.json();
     const customer = data.customers?.[0];
@@ -26,7 +66,7 @@ export async function action({ request }: ActionFunctionArgs) {
       {
         headers: {
           "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*", // 👈 allow all origins
+          "Access-Control-Allow-Origin": "*",
           "Access-Control-Allow-Methods": "POST, OPTIONS",
           "Access-Control-Allow-Headers": "Content-Type",
         },

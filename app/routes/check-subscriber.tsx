@@ -1,28 +1,74 @@
-// app/routes/test.tsx
-import type { LoaderFunctionArgs, ActionFunctionArgs } from "@remix-run/node";
+// app/routes/check-subscriber.tsx
+import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  const url = new URL(request.url);
-  const email = url.searchParams.get("email") || "hugh.lawrence@ecigarettedirect.co.uk";
-  
   // Handle preflight OPTIONS requests
   if (request.method === "OPTIONS") {
     return new Response(null, {
       headers: {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Origin": "https://extensions.shopifycdn.com",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type",
+      },
+    });
+  }
+  
+  return new Response(null, { status: 405 });
+}
+
+export async function action({ request }: ActionFunctionArgs) {
+  // Handle preflight requests
+  if (request.method === "OPTIONS") {
+    return new Response(null, {
+      headers: {
+        "Access-Control-Allow-Origin": "https://extensions.shopifycdn.com",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type",
       },
     });
   }
 
   try {
-    // Test Shopify API connection
-    const shop = process.env.SHOP || "your-store.myshopify.com";
-    const token = process.env.SHOPIFY_ADMIN_TOKEN || "your-token";
+    const { email } = await request.json();
+
+    if (!email) {
+      return new Response(JSON.stringify({ error: "Email is required" }), {
+        status: 400,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "https://extensions.shopifycdn.com",
+        },
+      });
+    }
+
+    const shop = process.env.SHOP;
+    const token = process.env.SHOPIFY_ADMIN_TOKEN;
     
+    // Clean up the shop domain (remove https:// if present)
+    const cleanShop = shop ? shop.replace(/^https?:\/\//, '') : '';
+    
+    if (!cleanShop || !token) {
+      return new Response(
+        JSON.stringify({ 
+          error: "Server configuration error",
+          details: {
+            shop: cleanShop,
+            tokenSet: !!token,
+            tokenLength: token ? token.length : 0
+          }
+        }), 
+        {
+          status: 500,
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "https://extensions.shopifycdn.com",
+          },
+        }
+      );
+    }
+
     const res = await fetch(
-      `https://${shop}/admin/api/2024-01/customers/search.json?query=email:${encodeURIComponent(email)}`,
+      `https://${cleanShop}/admin/api/2024-01/customers/search.json?query=email:${encodeURIComponent(email)}`,
       {
         headers: {
           "X-Shopify-Access-Token": token,
@@ -35,13 +81,13 @@ export async function loader({ request }: LoaderFunctionArgs) {
       return new Response(
         JSON.stringify({ 
           error: `Shopify API error: ${res.status} ${res.statusText}`,
-          details: `Trying to access: https://${shop}/admin/api/2024-01/customers/search.json?query=email:${encodeURIComponent(email)}`
+          shop: cleanShop
         }),
         {
           status: 500,
           headers: {
             "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Origin": "https://extensions.shopifycdn.com",
           },
         }
       );
@@ -52,41 +98,31 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
     return new Response(
       JSON.stringify({
-        success: true,
         customerId: customer?.id ?? null,
         isSubscribed: customer?.email_marketing_consent?.state === "subscribed",
-        customer: customer || null,
-        environment: {
-          shop: shop,
-          tokenSet: !!token,
-          tokenLength: token.length
-        }
+        customerExists: !!customer
       }),
       {
         headers: {
           "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Origin": "https://extensions.shopifycdn.com",
         },
       }
     );
   } catch (err) {
-    console.error("Error in test endpoint:", err);
+    console.error("Error in /check-subscriber:", err);
     return new Response(
       JSON.stringify({ 
         error: "Server error",
         message: err.message 
-      }),
+      }), 
       {
         status: 500,
         headers: {
           "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Origin": "https://extensions.shopifycdn.com",
         },
       }
     );
   }
-}
-
-export async function action({ request }: ActionFunctionArgs) {
-  return loader({ request });
 }

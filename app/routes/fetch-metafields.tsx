@@ -25,7 +25,6 @@ export async function action({ request }: ActionFunctionArgs) {
   try {
     const shop = process.env.SHOP;
     const token = process.env.SHOPIFY_ADMIN_TOKEN;
-
     const cleanShop = shop ? shop.replace(/^https?:\/\//, "") : "";
 
     if (!cleanShop || !token) {
@@ -38,7 +37,10 @@ export async function action({ request }: ActionFunctionArgs) {
             tokenLength: token ? token.length : 0,
           },
         }),
-        { status: 500, headers: { ...corsHeaders(), "Content-Type": "application/json" } }
+        {
+          status: 500,
+          headers: { ...corsHeaders(), "Content-Type": "application/json" },
+        }
       );
     }
 
@@ -48,10 +50,10 @@ export async function action({ request }: ActionFunctionArgs) {
           edges {
             node {
               id
-              fields {
-                key
-                value
-              }
+              heading: field(key: "heading") { value }
+              bodyText: field(key: "body_text") { value }
+              buttonLink: field(key: "button_link") { value }
+              buttonText: field(key: "button_text") { value }
             }
           }
         }
@@ -76,34 +78,37 @@ export async function action({ request }: ActionFunctionArgs) {
           error: `Shopify API error: ${res.status} ${res.statusText}`,
           shop: cleanShop,
         }),
-        { status: 500, headers: { ...corsHeaders(), "Content-Type": "application/json" } }
+        {
+          status: 500,
+          headers: { ...corsHeaders(), "Content-Type": "application/json" },
+        }
       );
     }
 
     const data = await res.json();
-    const metaobject = data?.data?.metaobjects?.edges?.[0]?.node;
-
-    const metafields: Record<string, string> = {};
-    metaobject?.fields?.forEach((field: any) => {
-      metafields[field.key] = field.value;
-    });
+    const node = data?.data?.metaobjects?.edges?.[0]?.node;
 
     return new Response(
       JSON.stringify({
         metafields: {
-          heading: metafields["heading"] ?? null,
-          bodyText: metafields["body_text"] ?? null,
-          buttonLink: metafields["button_link"] ?? null,
-          buttonText: metafields["button_text"] ?? null,
+          heading: node?.heading?.value ?? null,
+          bodyText: node?.bodyText?.value ?? null,
+          buttonLink: node?.buttonLink?.value ?? null,
+          buttonText: node?.buttonText?.value ?? null,
         },
       }),
-      { headers: { ...corsHeaders(), "Content-Type": "application/json" } }
+      {
+        headers: { ...corsHeaders(), "Content-Type": "application/json" },
+      }
     );
   } catch (err: any) {
     console.error("Error in /get-metafields:", err);
     return new Response(
       JSON.stringify({ error: "Server error", message: err.message }),
-      { status: 500, headers: { ...corsHeaders(), "Content-Type": "application/json" } }
+      {
+        status: 500,
+        headers: { ...corsHeaders(), "Content-Type": "application/json" },
+      }
     );
   }
 }

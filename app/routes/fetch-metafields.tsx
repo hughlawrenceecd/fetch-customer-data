@@ -1,38 +1,31 @@
 // app/routes/get-metafields.tsx
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 
+function corsHeaders() {
+  return {
+    "Access-Control-Allow-Origin": "https://extensions.shopifycdn.com",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type",
+  };
+}
+
 export async function loader({ request }: LoaderFunctionArgs) {
-  // Handle preflight OPTIONS requests
   if (request.method === "OPTIONS") {
-    return new Response(null, {
-      headers: {
-        "Access-Control-Allow-Origin": "https://extensions.shopifycdn.com",
-        "Access-Control-Allow-Methods": "POST, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type",
-      },
-    });
+    return new Response(null, { headers: corsHeaders() });
   }
 
-  return new Response(null, { status: 405 });
+  return new Response(null, { status: 405, headers: corsHeaders() });
 }
 
 export async function action({ request }: ActionFunctionArgs) {
-  // Handle preflight requests
   if (request.method === "OPTIONS") {
-    return new Response(null, {
-      headers: {
-        "Access-Control-Allow-Origin": "https://extensions.shopifycdn.com",
-        "Access-Control-Allow-Methods": "POST, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type",
-      },
-    });
+    return new Response(null, { headers: corsHeaders() });
   }
 
   try {
     const shop = process.env.SHOP;
     const token = process.env.SHOPIFY_ADMIN_TOKEN;
 
-    // Clean up the shop domain (remove https:// if present)
     const cleanShop = shop ? shop.replace(/^https?:\/\//, "") : "";
 
     if (!cleanShop || !token) {
@@ -45,17 +38,10 @@ export async function action({ request }: ActionFunctionArgs) {
             tokenLength: token ? token.length : 0,
           },
         }),
-        {
-          status: 500,
-          headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "https://extensions.shopifycdn.com",
-          },
-        }
+        { status: 500, headers: { ...corsHeaders(), "Content-Type": "application/json" } }
       );
     }
 
-    // GraphQL query for the metaobject
     const query = `
       query GetCheckoutSignupForm {
         metaobjects(type: "checkout_sign_up_form", first: 1) {
@@ -90,20 +76,13 @@ export async function action({ request }: ActionFunctionArgs) {
           error: `Shopify API error: ${res.status} ${res.statusText}`,
           shop: cleanShop,
         }),
-        {
-          status: 500,
-          headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "https://extensions.shopifycdn.com",
-          },
-        }
+        { status: 500, headers: { ...corsHeaders(), "Content-Type": "application/json" } }
       );
     }
 
     const data = await res.json();
     const metaobject = data?.data?.metaobjects?.edges?.[0]?.node;
 
-    // Restructure fields into a simpler object
     const metafields: Record<string, string> = {};
     metaobject?.fields?.forEach((field: any) => {
       metafields[field.key] = field.value;
@@ -118,27 +97,13 @@ export async function action({ request }: ActionFunctionArgs) {
           buttonText: metafields["button_text"] ?? null,
         },
       }),
-      {
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "https://extensions.shopifycdn.com",
-        },
-      }
+      { headers: { ...corsHeaders(), "Content-Type": "application/json" } }
     );
   } catch (err: any) {
     console.error("Error in /get-metafields:", err);
     return new Response(
-      JSON.stringify({
-        error: "Server error",
-        message: err.message,
-      }),
-      {
-        status: 500,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "https://extensions.shopifycdn.com",
-        },
-      }
+      JSON.stringify({ error: "Server error", message: err.message }),
+      { status: 500, headers: { ...corsHeaders(), "Content-Type": "application/json" } }
     );
   }
 }

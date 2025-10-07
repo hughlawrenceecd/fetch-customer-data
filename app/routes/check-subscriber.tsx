@@ -12,7 +12,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       },
     });
   }
-  
+
   return new Response(null, { status: 405 });
 }
 
@@ -47,16 +47,16 @@ export async function action({ request }: ActionFunctionArgs) {
       return await handleOmnisendSubscription(email, firstName, lastName, orderId);
     }
 
-    // Default: check subscriber status (existing functionality)
+    // Default: check subscriber status
     return await checkSubscriberStatus(email);
-    
+
   } catch (err) {
     console.error("Error in /check-subscriber:", err);
     return new Response(
-      JSON.stringify({ 
+      JSON.stringify({
         error: "Server error",
-        message: err.message 
-      }), 
+        message: err.message
+      }),
       {
         status: 500,
         headers: {
@@ -68,21 +68,24 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 }
 
-// Handle Omnisend subscription
-// Handle Omnisend subscription - V5 API
-async function handleOmnisendSubscription(email: string, firstName?: string, lastName?: string, orderId?: string) {
+// ----------------------------
+// HANDLE OMNISEND SUBSCRIPTION
+// ----------------------------
+async function handleOmnisendSubscription(
+  email: string,
+  firstName?: string,
+  lastName?: string,
+  orderId?: string
+) {
   console.log("Starting Omnisend v5 subscription for:", email);
-  
+
   const omnisendApiKey = process.env.OMNISEND_API_KEY;
-  
-  console.log("Omnisend API key present:", !!omnisendApiKey);
-  
   if (!omnisendApiKey) {
     console.error("OMNISEND_API_KEY environment variable is not set");
     return new Response(
-      JSON.stringify({ 
+      JSON.stringify({
         error: "Omnisend API key not configured",
-      }), 
+      }),
       {
         status: 500,
         headers: {
@@ -93,145 +96,188 @@ async function handleOmnisendSubscription(email: string, firstName?: string, las
     );
   }
 
-  // Test API key first with v5 endpoint
+  // Test API key first
   try {
-    console.log("Testing Omnisend v5 API key...");
-    const testResponse = await fetch('https://api.omnisend.com/v5/contacts?limit=1', {
-      method: 'GET',
-      headers: {
-        'X-API-KEY': omnisendApiKey,
-      },
+    const testResponse = await fetch("https://api.omnisend.com/v5/contacts?limit=1", {
+      method: "GET",
+      headers: { "X-API-KEY": omnisendApiKey },
     });
-    
-    console.log("API key test response status:", testResponse.status);
-    
+
     if (!testResponse.ok) {
-      const testError = await testResponse.text();
-      console.error("API key test failed. Status:", testResponse.status, "Error:", testError);
-      throw new Error(`Omnisend API connection failed: ${testResponse.status} - ${testError}`);
+      const text = await testResponse.text();
+      throw new Error(`Omnisend API connection failed: ${testResponse.status} - ${text}`);
     }
-    
-    console.log("API key test successful - v5 endpoint is accessible");
-  } catch (testErr) {
-    console.error("API key test error:", testErr);
-    throw new Error(`Omnisend API connection failed: ${testErr.message}`);
+  } catch (err) {
+    console.error("Omnisend API test failed:", err);
+    throw new Error(`Omnisend API connection failed: ${err.message}`);
   }
 
-  // Create contact data according to v5 API structure
+  // Construct contact data
   const contactData = {
     identifiers: [
       {
-        "type": "email",
-        "id": email.toLowerCase(), // Email is case-sensitive in v5
-        "channels": {
-          "email": {
-            "status": "subscribed",
-            "statusDate": new Date().toISOString()
-            // Note: For production, you should add consent properties:
-            // "consent": {
-            //   "source": "Shopify Checkout",
-            //   "createdAt": new Date().toISOString(),
-            //   "ip": "customer-ip-address", // You'd need to capture this
-            //   "userAgent": "shopify-checkout-extension"
-            // }
-          }
-        }
-      }
+        type: "email",
+        id: email.toLowerCase(),
+        channels: {
+          email: {
+            status: "subscribed",
+            statusDate: new Date().toISOString(),
+          },
+        },
+      },
     ],
     firstName: firstName || "",
     lastName: lastName || "",
     customProperties: {
-      "subscribedFrom": "shopify-thank-you-page",
-      "shopifyOrder": orderId || "unknown",
-      "subscriptionDate": new Date().toISOString(),
-      "shopifyCustomer": true
+      subscribedFrom: "shopify-thank-you-page",
+      shopifyOrder: orderId || "unknown",
+      subscriptionDate: new Date().toISOString(),
+      shopifyCustomer: true,
     },
-    tags: ["post-checkout-test-tag"]
   };
 
-  console.log("Making Omnisend v5 subscription request with data:", JSON.stringify(contactData, null, 2));
+  console.log("Sending Omnisend v5 subscription request:", JSON.stringify(contactData, null, 2));
 
+  let omnisendResult = null;
   try {
-    const omnisendResponse = await fetch('https://api.omnisend.com/v5/contacts', {
-      method: 'POST',
+    const omnisendResponse = await fetch("https://api.omnisend.com/v5/contacts", {
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
-        'X-API-KEY': omnisendApiKey,
+        "Content-Type": "application/json",
+        "X-API-KEY": omnisendApiKey,
       },
       body: JSON.stringify(contactData),
     });
 
     const responseText = await omnisendResponse.text();
-    console.log("Omnisend v5 subscription response - Status:", omnisendResponse.status, "Body:", responseText);
+    console.log("Omnisend v5 response:", omnisendResponse.status, responseText);
 
-    if (!omnisendResponse.ok) {
-      if (omnisendResponse.status === 409) {
-        console.log("Contact already exists in Omnisend - this is actually a success for us");
-        // In v5, 409 means the contact already exists, which is fine for our use case
-        return new Response(
-          JSON.stringify({ 
-            success: true, 
-            message: 'Contact already exists in Omnisend',
-            status: 'subscribed'
-          }),
-          {
-            headers: {
-              "Content-Type": "application/json",
-              "Access-Control-Allow-Origin": "https://extensions.shopifycdn.com",
-            },
-          }
-        );
-      }
-      
+    if (!omnisendResponse.ok && omnisendResponse.status !== 409) {
       throw new Error(`Omnisend subscription failed: ${omnisendResponse.status} - ${responseText}`);
     }
 
-    let result;
-    try {
-      result = responseText ? JSON.parse(responseText) : {};
-    } catch (parseError) {
-      result = { message: "Subscription successful (no response body)" };
+    omnisendResult = responseText ? JSON.parse(responseText) : {};
+  } catch (err) {
+    console.error("Error subscribing in Omnisend:", err);
+    throw err;
+  }
+
+  // ----------------------------------------
+  // ADD SHOPIFY TAG AFTER SUCCESSFUL SUBSCRIBE
+  // ----------------------------------------
+  let tagResult = { success: false, message: "Skipped" };
+  try {
+    tagResult = await addShopifyCustomerTag(email, "post-checkout-test-tag");
+  } catch (err) {
+    console.error("Failed to add Shopify tag:", err);
+  }
+
+  // ----------------------------------------
+  // RETURN COMBINED RESULT
+  // ----------------------------------------
+  return new Response(
+    JSON.stringify({
+      success: true,
+      message: "Successfully subscribed to Omnisend and tagged in Shopify",
+      data: { omnisend: omnisendResult, shopifyTag: tagResult },
+      status: "subscribed",
+    }),
+    {
+      headers: {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "https://extensions.shopifycdn.com",
+      },
     }
-    
-    console.log("Omnisend v5 subscription successful:", result);
-    
-    return new Response(
-      JSON.stringify({
-        success: true,
-        message: 'Successfully subscribed to Omnisend',
-        data: result,
-        status: 'subscribed'
-      }),
+  );
+}
+
+// ----------------------------
+// ADD SHOPIFY CUSTOMER TAG
+// ----------------------------
+async function addShopifyCustomerTag(email: string, tag: string) {
+  const shop = process.env.SHOP;
+  const token = process.env.SHOPIFY_ADMIN_TOKEN;
+  const cleanShop = shop ? shop.replace(/^https?:\/\//, "") : "";
+
+  if (!cleanShop || !token) {
+    console.error("Missing Shopify credentials");
+    return { success: false, message: "Missing Shopify credentials" };
+  }
+
+  try {
+    // Step 1: Find customer by email
+    const searchRes = await fetch(
+      `https://${cleanShop}/admin/api/2024-01/customers/search.json?query=email:${encodeURIComponent(
+        email
+      )}`,
       {
         headers: {
+          "X-Shopify-Access-Token": token,
           "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "https://extensions.shopifycdn.com",
         },
       }
     );
 
+    const searchData = await searchRes.json();
+    const customer = searchData.customers?.[0];
+    if (!customer) {
+      console.log(`No Shopify customer found for ${email}, skipping tag.`);
+      return { success: false, message: "Customer not found" };
+    }
+
+    const customerId = customer.id;
+    const tagsUrl = `https://${cleanShop}/admin/api/2024-01/customers/${customerId}.json`;
+
+    // Merge tags safely
+    const updatedTags = Array.from(
+      new Set([...(customer.tags?.split(",") || []), tag])
+    )
+      .map((t) => t.trim())
+      .filter(Boolean)
+      .join(", ");
+
+    // Step 2: Update customer tags
+    const updateRes = await fetch(tagsUrl, {
+      method: "PUT",
+      headers: {
+        "X-Shopify-Access-Token": token,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ customer: { id: customerId, tags: updatedTags } }),
+    });
+
+    if (!updateRes.ok) {
+      const text = await updateRes.text();
+      throw new Error(`Failed to update tags: ${updateRes.status} - ${text}`);
+    }
+
+    console.log(`✅ Tag "${tag}" added to Shopify customer: ${email}`);
+    return { success: true, message: `Tag "${tag}" added` };
   } catch (err) {
-    console.error("Error in Omnisend v5 subscription process:", err);
-    throw err;
+    console.error("Error tagging Shopify customer:", err);
+    return { success: false, message: err.message };
   }
 }
-// Existing function for checking subscriber status
+
+// ----------------------------
+// CHECK SUBSCRIBER STATUS
+// ----------------------------
 async function checkSubscriberStatus(email: string) {
   const shop = process.env.SHOP;
   const token = process.env.SHOPIFY_ADMIN_TOKEN;
-  
-  const cleanShop = shop ? shop.replace(/^https?:\/\//, '') : '';
-  
+
+  const cleanShop = shop ? shop.replace(/^https?:\/\//, "") : "";
+
   if (!cleanShop || !token) {
     return new Response(
-      JSON.stringify({ 
+      JSON.stringify({
         error: "Server configuration error",
         details: {
           shop: cleanShop,
           tokenSet: !!token,
-          tokenLength: token ? token.length : 0
-        }
-      }), 
+          tokenLength: token ? token.length : 0,
+        },
+      }),
       {
         status: 500,
         headers: {
@@ -243,7 +289,9 @@ async function checkSubscriberStatus(email: string) {
   }
 
   const res = await fetch(
-    `https://${cleanShop}/admin/api/2024-01/customers/search.json?query=email:${encodeURIComponent(email)}`,
+    `https://${cleanShop}/admin/api/2024-01/customers/search.json?query=email:${encodeURIComponent(
+      email
+    )}`,
     {
       headers: {
         "X-Shopify-Access-Token": token,
@@ -254,9 +302,9 @@ async function checkSubscriberStatus(email: string) {
 
   if (!res.ok) {
     return new Response(
-      JSON.stringify({ 
+      JSON.stringify({
         error: `Shopify API error: ${res.status} ${res.statusText}`,
-        shop: cleanShop
+        shop: cleanShop,
       }),
       {
         status: 500,
@@ -275,7 +323,7 @@ async function checkSubscriberStatus(email: string) {
     JSON.stringify({
       customerId: customer?.id ?? null,
       isSubscribed: customer?.email_marketing_consent?.state === "subscribed",
-      customerExists: !!customer
+      customerExists: !!customer,
     }),
     {
       headers: {

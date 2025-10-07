@@ -197,6 +197,8 @@ async function handleOmnisendSubscription(
 async function addShopifyCustomerTag(email: string, tag: string) {
   const shop = process.env.SHOP;
   const token = process.env.SHOPIFY_ADMIN_TOKEN;
+  console.log("Active Shopify store:", process.env.SHOP);
+
   const cleanShop = shop ? shop.replace(/^https?:\/\//, "") : "";
 
   if (!cleanShop || !token) {
@@ -264,6 +266,7 @@ async function addShopifyCustomerTag(email: string, tag: string) {
 // ----------------------------
 async function checkSubscriberStatus(email: string) {
   const shop = process.env.SHOP;
+  console.log("Active Shopify store:", process.env.SHOP);
   const token = process.env.SHOPIFY_ADMIN_TOKEN;
 
   const cleanShop = shop ? shop.replace(/^https?:\/\//, "") : "";

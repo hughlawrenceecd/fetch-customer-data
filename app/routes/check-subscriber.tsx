@@ -146,7 +146,7 @@ async function handleOmnisendSubscription(email: string, firstName?: string, las
       "subscriptionDate": new Date().toISOString(),
       "shopifyCustomer": true
     },
-    tags: ["shopify-customer", "thank-you-page-subscriber"]
+    tags: ["post-checkout-test-tag"]
   };
 
   console.log("Making Omnisend v5 subscription request with data:", JSON.stringify(contactData, null, 2));
